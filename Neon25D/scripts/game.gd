@@ -8,6 +8,10 @@ var feel=CombatFeel.new()
 var shake_strength=1.0
 var levels=preload("res://scripts/level_director.gd").new()
 var boss_director=preload("res://scripts/boss_director.gd").new()
+var session=preload("res://scripts/run_session.gd").new()
+var options=preload("res://scripts/player_options.gd").new()
+var upgrade_choices=[]
+var resume_probe=""
 var animation_drivers=[]
 var storm=0
 var crystal=0
@@ -100,6 +104,7 @@ func _ready():
 	rng.randomize()
 	for arg in OS.get_cmdline_user_args():
 		if arg == "--test": test_mode = true
+		if arg.begins_with("--resume-probe="):resume_probe=arg.trim_prefix("--resume-probe=");test_mode=true
 		if arg.begins_with("--capture="): capture_path = arg.trim_prefix("--capture=")
 		if arg.begins_with("--capture-scene="):capture_scene=arg.trim_prefix("--capture-scene=")
 	var cfg = ConfigFile.new()
@@ -116,8 +121,12 @@ func _ready():
 	create_touch_ui()
 	apply_ui_theme()
 	call_deferred("resize_hud_bars")
+	options.setup(self)
+	get_tree().auto_accept_quit=false
+	Input.joy_connection_changed.connect(joy_connection)
 	show_title()
-	if test_mode: call_deferred("run_tests")
+	if resume_probe!="":call_deferred("run_resume_probe")
+	elif test_mode: call_deferred("run_tests")
 	elif capture_path != "":
 		start_game()
 		if capture_scene=="stats":show_statistics()
@@ -125,6 +134,9 @@ func _ready():
 		elif capture_scene=="combat":combat_showcase()
 		elif capture_scene=="level":level_showcase()
 		elif capture_scene=="boss":boss_showcase()
+		elif capture_scene=="settings":options.show(self,true)
+		elif capture_scene=="bindings":options.from_pause=true;options.show_bindings(self)
+		elif capture_scene=="low":options.quality=0;options.apply_quality(self)
 
 func material(color: Color, emission = false):
 	var m = StandardMaterial3D.new()
@@ -299,15 +311,25 @@ func button(text_value, callback):
 	b.custom_minimum_size.y = 48
 	b.pressed.connect(callback)
 	menu_box.add_child(b)
+	call_deferred("focus_menu")
 	return b
 
+func focus_menu():
+	if get_viewport().gui_get_focus_owner()!=null:return
+	for child in menu_box.get_children():
+		if child is Button and not child.disabled:child.grab_focus();return
+
 func show_title():
-	menu("霓虹夜市 / 2.5D", "午夜营业中 · 立体夜市\n十二街区 / 实体掩体 / 异能构筑 / 最终 Boss\nWASD 或方向键移动 · 鼠标左键射击 · 空格冲刺 · E 交互\n永久印记 %d · 累计击败 %d · 通关 %d" % [marks,total_kills,wins])
+	if not session.save(self):save_error();return
+	session.active=false;options.screen=""
+	menu("霓虹夜市 / 2.5D", "午夜营业中 · 立体夜市\n十二街区 / 实体掩体 / 异能构筑 / 最终 Boss\n键鼠 / 手柄 / 触控 · 可在设置中查看和修改操作\n永久印记 %d · 累计击败 %d · 通关 %d" % [marks,total_kills,wins])
+	if not test_mode and not session.read().is_empty():button("继续上次夜行",continue_run)
 	button("角色："+["夜行信使 100HP","滑板游侠 85HP / 高移速","夜摊守卫 120HP / 低移速"][chosen_runner]+"  [点击切换]",cycle_runner)
 	button("武器："+["脉冲手枪","近距散射","穿巷长针"][chosen_weapon]+"  [点击切换]",cycle_weapon)
 	button("夜市履历 / 进阶解锁",show_statistics)
-	button("开始午夜突围",start_game)
-	button("退出游戏",func(): get_tree().quit())
+	button("开始新局（替换已有续局）",start_game)
+	button("设置 / 画质 / 按键",func():options.show(self))
+	button("退出游戏",quit_safely)
 
 func cycle_runner():
 	chosen_runner = (chosen_runner+1)%3
@@ -320,6 +342,7 @@ func cycle_weapon():
 	show_title()
 
 func start_game():
+	session.discard(self);session.active=true;session.clock=0;upgrade_choices=[];options.screen=""
 	hp = [100.0,85.0,120.0][chosen_runner]
 	max_hp = hp
 	speed = [6.2,7.1,5.3][chosen_runner]
@@ -383,6 +406,8 @@ func enter_room(index):
 	for drop in r.drops: spawn_loot(Vector3(drop.x,0,drop.z),drop.heal,drop.xp,drop.coins)
 	state = "play"; overlay.hide()
 	update_hud()
+	options.apply_quality(self)
+	session.save(self)
 
 func spawn_enemy(kind, pos):
 	var body = actor(pos,0.5 if kind in ["boss","tank"] else 0.32)
@@ -396,22 +421,36 @@ func spawn_enemy(kind, pos):
 	if kind=="boss":e.phase=1;e.mode="intro";e.timer=1.8
 	enemies.append(e)
 
+func _input(event):options.handle(self,event)
+
 func _unhandled_input(event):
-	if event is InputEventKey and event.pressed and not event.echo:
-		if event.keycode == KEY_ESCAPE: toggle_pause()
-		if event.keycode == KEY_SPACE and state == "play": try_dash()
-		if event.keycode == KEY_E and state == "play": interact()
-		if event.keycode == KEY_F11:
-			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED if DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN else DisplayServer.WINDOW_MODE_FULLSCREEN)
+	if event.is_action_pressed("pause_game") and not event.is_echo():
+		if options.screen!="":options.back(self)
+		else:toggle_pause()
+	if event is InputEventJoypadButton and event.is_action_pressed("ui_cancel"):
+		if options.screen!="":options.back(self)
+		elif session.active and state in ["menu","pause"] and pending==0:resume_game()
+	if state=="play" and event.is_action_pressed("dash") and not event.is_echo():try_dash()
+	if state=="play" and event.is_action_pressed("interact") and not event.is_echo():interact()
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode==KEY_F11:
+		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED if DisplayServer.window_get_mode()==DisplayServer.WINDOW_MODE_FULLSCREEN else DisplayServer.WINDOW_MODE_FULLSCREEN)
+
+func joy_connection(device,connected):
+	if not connected and device==options.pad:
+		options.pad=-1;options.pad_active=false
+		if state=="play":toggle_pause()
 
 func keyboard_movement():
-	return Vector3(float(Input.is_physical_key_pressed(KEY_D) or Input.is_physical_key_pressed(KEY_RIGHT))-float(Input.is_physical_key_pressed(KEY_A) or Input.is_physical_key_pressed(KEY_LEFT)),0,float(Input.is_physical_key_pressed(KEY_S) or Input.is_physical_key_pressed(KEY_DOWN))-float(Input.is_physical_key_pressed(KEY_W) or Input.is_physical_key_pressed(KEY_UP))).normalized()
+	var v=Input.get_vector("move_left","move_right","move_up","move_down")
+	return Vector3(v.x,0,v.y)
 
 func movement():
 	var value=keyboard_movement()+Vector3(touch_move.x,0,touch_move.y)
 	return value.limit_length(1)
 
 func aim_direction():
+	var pad_aim=options.aim()
+	if pad_aim!=Vector3.ZERO:return pad_aim
 	if touch_firing:
 		if touch_aim.length()>.12:return Vector3(touch_aim.x,0,touch_aim.y).normalized()
 		var nearest=null;var distance=INF
@@ -435,6 +474,7 @@ func try_dash():
 
 func _physics_process(dt):
 	if state != "play": return
+	session.tick(self,dt)
 	elapsed += dt; shot_cd -= dt; dash_cd = max(0,dash_cd-dt); dash_time = max(0,dash_time-dt); invulnerable = max(0,invulnerable-dt); attack_gap = max(0,attack_gap-dt)
 	hp = min(max_hp,hp+regen*dt)
 	player.velocity = dash_dir*speed*3 if dash_time > 0 else movement()*speed
@@ -442,7 +482,7 @@ func _physics_process(dt):
 	var aim = aim_direction()
 	player_model.rotation.y = atan2(aim.x,aim.z)
 	player_model.get_meta("animation_driver").tick(player.velocity.length()>.1,dt)
-	if (Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) or touch_firing) and shot_cd <= 0:
+	if (Input.is_action_pressed("fire") or touch_firing) and shot_cd <= 0:
 		shoot(aim); shot_cd = fire_rate
 	for h in hazards:
 		if abs(player.position.x-h.pos.x)<h.size.x/2 and abs(player.position.z-h.pos.z)<h.size.y/2: hurt(6)
@@ -693,12 +733,14 @@ func add_xp(amount):
 func choose_upgrade():
 	menu("霓虹强化 / LV.%d" % level,"选择一项 · 实际效果与当前层数\n"+build_summary())
 	var pool=eligible_upgrades();pool.shuffle()
-	var options=pool.slice(0,3)
-	if level<=3 and not options.any(func(i):return i in [8,9,10,12]):options[2]=[8,9,10,12][rng.randi_range(0,3)]
-	for i in options:button(TITLES[i]+"  [当前 %d 层]\n" % build_counts.get(i,0)+upgrade_description(i),apply_upgrade.bind(i))
+	if upgrade_choices.is_empty():
+		upgrade_choices=pool.slice(0,3)
+		if level<=3 and not upgrade_choices.any(func(i):return i in [8,9,10,12]):upgrade_choices[2]=[8,9,10,12][rng.randi_range(0,3)]
+	for i in upgrade_choices:button(TITLES[i]+"  [当前 %d 层]\n" % build_counts.get(i,0)+upgrade_description(i),apply_upgrade.bind(i))
 	sound("level")
 
 func apply_upgrade(i):
+	upgrade_choices=[]
 	build_counts[i]=build_counts.get(i,0)+1
 	match i:
 		0:damage_value*=1.3
@@ -756,18 +798,33 @@ func toggle_pause():
 	if state=="play":
 		menu("夜市暂停营业","继续你的旅途，或放弃本局重新出发。")
 		state="pause"
-		button("震动强度："+str(shake_strength)+"（点击切换）",cycle_shake);button("继续游戏",resume_game);button("重新开始",start_game);button("回到主菜单",show_title)
+		button("继续游戏",resume_game);button("设置 / 按键 / 画质",func():options.show(self,true));button("保存并回到主菜单",show_title);button("保存并退出",quit_safely);button("放弃本局重新开始",start_game)
 	elif state=="pause":resume_game()
 
 func cycle_shake():
 	shake_strength=0.0 if shake_strength==1.0 else .35 if shake_strength==0.0 else 1.0
 	state="play";toggle_pause()
 
+func save_error():
+	menu("保存失败",session.error)
+	button("继续游戏",resume_game);button("重试保存退出",quit_safely)
+
+func continue_run():
+	if not session.restore(self,session.read()):
+		menu("无法续局","未找到有效存档，或版本不兼容。原文件未修改。")
+		button("返回",show_title)
+
+func quit_safely():
+	if session.save(self):get_tree().quit()
+	else:save_error()
+
 func _notification(what):
+	if what==NOTIFICATION_WM_CLOSE_REQUEST:quit_safely()
 	if what==NOTIFICATION_APPLICATION_FOCUS_OUT and state=="play":toggle_pause()
 
 func finish(won):
 	if settled:return
+	session.active=false;session.discard(self)
 	settled=true;pending=0;reset_touch()
 	var reward=5 if won else max(1,kills/8)
 	marks+=int(reward);total_kills+=kills;total_runs+=1
@@ -793,8 +850,9 @@ func update_hud():
 	hp_bar.value=hp/max_hp*100
 	var r=rooms[room_index]
 	build_label.text=build_summary()
-	hint.text="WASD/方向键 移动 · 鼠标左键 射击 · 空格 冲刺 · E 交互 · F11 全屏  |  "+("街区安全，沿右侧霓虹出口前进 →" if r.clear else levels.description(r))
-	if r.type in ["shop","event","treasure"] and not r.used:hint.text+="  |  中央货箱：E"
+	hint.text=options.control_hint()+"  |  "+("街区安全，沿右侧霓虹出口前进 →" if r.clear else levels.description(r))
+	if r.type in ["shop","event","treasure"] and not r.used:hint.text+="  |  中央货箱："+("A" if options.pad_active else OS.get_keycode_string(options.bindings.interact))
+	if session.error!="":hint.text+=" | 自动保存失败：请在暂停菜单重试保存。"
 	boss_hud.text=""
 	boss_bar.hide()
 	for e in enemies:
@@ -863,7 +921,7 @@ func prepare_audio():
 
 func sound(key):
 	if muted or test_mode:return
-	var audio=AudioStreamPlayer.new();add_child(audio);audio.stream=sound_bank[key];audio.volume_db=-13;audio.finished.connect(audio.queue_free);audio.play()
+	var audio=AudioStreamPlayer.new();add_child(audio);audio.stream=sound_bank[key];audio.bus="Interface" if key in ["pick","level"] else "Combat";audio.volume_db=-13;audio.finished.connect(audio.queue_free);audio.play()
 
 func register_animation(model):
 	var driver=AnimationDriver.new(model)
@@ -1031,6 +1089,7 @@ func combat_showcase():
 
 func _process(_dt):
 	resize_hud_bars()
+	options.apply_audio(self)
 	feel.update(self,_dt if state=="play" else 0.0)
 	for driver in animation_drivers:
 		if is_instance_valid(driver.model):driver.set_active(state in ["play","dead","ending","showcase"])
@@ -1043,6 +1102,22 @@ func _process(_dt):
 		await get_tree().process_frame
 		await get_tree().process_frame
 		get_tree().quit()
+
+func run_resume_probe():
+	session.path="user://isolated-resume-probe.cfg"
+	if resume_probe=="write":
+		start_game();state="menu";hp=39;coins=123;chain=2;pending=1;upgrade_choices=[8,9,10]
+		rooms[0].goal=3;rooms[0].lit=[0,2];enemies[0].hp=11
+		assert(session.write_data(session.snapshot(self)))
+		print("RESUME_PROCESS_WRITE_OK")
+	else:
+		assert(session.restore(self,session.read()))
+		assert(hp==39 and coins==123 and chain==2 and enemies[0].hp==11)
+		assert(rooms[0].lit==[0,2] and pending==1 and upgrade_choices==[8,9,10])
+		for suffix in ["",".bak",".tmp"]:
+			if FileAccess.file_exists(session.path+suffix):DirAccess.remove_absolute(session.path+suffix)
+		print("RESUME_PROCESS_READ_OK")
+	get_tree().quit()
 
 func run_tests():
 	start_game()
@@ -1071,6 +1146,8 @@ func run_tests():
 	var ray=PhysicsRayQueryParameters3D.create(Vector3(-8,1,-2),Vector3(-2,1,-2),1)
 	assert(not get_world_3d().direct_space_state.intersect_ray(ray).is_empty(),"Cover must block bullets")
 	rooms[0].drops=[];spawn_loot(Vector3.ZERO,false,12,5);save_room_drops();assert(rooms[0].drops.size()==1)
+	var comfort_ok=await preload("res://scripts/comfort_checks.gd").new().run(self)
+	assert(comfort_ok==true)
 	var level_ok=await preload("res://scripts/level_checks.gd").new().run(self)
 	assert(level_ok==true)
 	var feel_ok=await preload("res://scripts/combat_checks.gd").new().run(self)

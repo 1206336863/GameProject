@@ -15,6 +15,6 @@ $output = $lines | Out-String
 Write-Output $output
 if ($LogPath) { [IO.File]::WriteAllText($LogPath, $output, [Text.UTF8Encoding]::new($false)) }
 if ($engineExit -ne 0 -or $output -match 'SCRIPT ERROR|ERROR:|Assertion failed' -or
-    $output -notmatch 'NEON25D_LEVEL_TESTS_OK' -or $output -notmatch 'NEON25D_COMBAT_TESTS_OK' -or $output -notmatch 'NEON25D_DEEP_TESTS_OK' -or $output -notmatch 'NEON25D_TESTS_OK') {
+    $output -notmatch 'NEON25D_COMFORT_TESTS_OK' -or $output -notmatch 'NEON25D_LEVEL_TESTS_OK' -or $output -notmatch 'NEON25D_COMBAT_TESTS_OK' -or $output -notmatch 'NEON25D_DEEP_TESTS_OK' -or $output -notmatch 'NEON25D_TESTS_OK') {
     throw 'Native tests failed or did not complete. Inspect the log above.'
 }
