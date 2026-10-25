@@ -8,6 +8,8 @@ var rng=RandomNumberGenerator.new()
 var outlined=[]
 var outline:ShaderMaterial
 var fading_count=0
+var spark_frame=-1
+var spark_count=0
 
 func reset(g):
 	occluders.clear();debris.clear();outlined.clear();recoil=0;trauma=0;fading_count=0
@@ -38,13 +40,15 @@ func blocks_view(item, origin, target):
 func update(g,dt):
 	if not is_instance_valid(g.player):return
 	var blocked=false;fading_count=0
+	var targets=[];var origins=[]
+	for height in [.45,1.05,1.65]:
+		var target=g.player.global_position+Vector3.UP*height
+		targets.append(target);origins.append(g.camera.project_ray_origin(g.camera.unproject_position(target)))
 	for item in occluders:
 		if not is_instance_valid(item.mesh):continue
 		var hit=false
-		for height in [.45,1.05,1.65]:
-			var target=g.player.global_position+Vector3.UP*height
-			var origin=g.camera.project_ray_origin(g.camera.unproject_position(target))
-			if blocks_view(item,origin,target):hit=true;break
+		for i in range(3):
+			if blocks_view(item,origins[i],targets[i]):hit=true;break
 		blocked=blocked or hit
 		var previous_alpha=item.alpha
 		item.alpha=move_toward(item.alpha,.18 if hit else 1.0,dt*6)
@@ -90,7 +94,10 @@ func add_debris(node,velocity,life):
 	debris.append({"node":node,"velocity":velocity,"life":life})
 
 func impact(g,pos,color,count):
-	for i in range(count):
+	var frame=Engine.get_process_frames()
+	if frame!=spark_frame:spark_frame=frame;spark_count=0
+	var amount=min(count,max(0,40-spark_count));spark_count+=amount
+	for i in range(amount):
 		var spark=g.cube(g.world,pos,Vector3(.035,.035,.15),color,true)
 		add_debris(spark,Vector3(rng.randf_range(-3,3),rng.randf_range(.5,3),rng.randf_range(-3,3)),.22+rng.randf()*.15)
 

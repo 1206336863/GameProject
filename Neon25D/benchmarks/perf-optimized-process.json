@@ -1,0 +1,172 @@
+[
+  {
+    "seconds": 0.01,
+    "private_mb": 0.45,
+    "working_mb": 2.59
+  },
+  {
+    "seconds": 2.08,
+    "private_mb": 654.6,
+    "working_mb": 577.62
+  },
+  {
+    "seconds": 4.1,
+    "private_mb": 979.71,
+    "working_mb": 666.64
+  },
+  {
+    "seconds": 6.12,
+    "private_mb": 979.56,
+    "working_mb": 666.61
+  },
+  {
+    "seconds": 8.14,
+    "private_mb": 980.32,
+    "working_mb": 667.39
+  },
+  {
+    "seconds": 10.16,
+    "private_mb": 972.29,
+    "working_mb": 659.39
+  },
+  {
+    "seconds": 12.18,
+    "private_mb": 972.29,
+    "working_mb": 659.47
+  },
+  {
+    "seconds": 14.21,
+    "private_mb": 972.29,
+    "working_mb": 659.66
+  },
+  {
+    "seconds": 16.22,
+    "private_mb": 972.29,
+    "working_mb": 659.68
+  },
+  {
+    "seconds": 18.24,
+    "private_mb": 972.29,
+    "working_mb": 659.69
+  },
+  {
+    "seconds": 20.25,
+    "private_mb": 972.29,
+    "working_mb": 659.69
+  },
+  {
+    "seconds": 22.28,
+    "private_mb": 973.31,
+    "working_mb": 661.01
+  },
+  {
+    "seconds": 24.3,
+    "private_mb": 975.19,
+    "working_mb": 662.9
+  },
+  {
+    "seconds": 26.31,
+    "private_mb": 975.19,
+    "working_mb": 662.91
+  },
+  {
+    "seconds": 28.33,
+    "private_mb": 975.19,
+    "working_mb": 662.92
+  },
+  {
+    "seconds": 30.34,
+    "private_mb": 975.88,
+    "working_mb": 663.72
+  },
+  {
+    "seconds": 32.35,
+    "private_mb": 978.85,
+    "working_mb": 665.18
+  },
+  {
+    "seconds": 34.36,
+    "private_mb": 978.85,
+    "working_mb": 665.18
+  },
+  {
+    "seconds": 36.38,
+    "private_mb": 978.85,
+    "working_mb": 665.2
+  },
+  {
+    "seconds": 38.4,
+    "private_mb": 978.85,
+    "working_mb": 665.21
+  },
+  {
+    "seconds": 40.41,
+    "private_mb": 978.85,
+    "working_mb": 665.23
+  },
+  {
+    "seconds": 42.43,
+    "private_mb": 978.85,
+    "working_mb": 665.25
+  },
+  {
+    "seconds": 44.45,
+    "private_mb": 978.85,
+    "working_mb": 665.25
+  },
+  {
+    "seconds": 46.46,
+    "private_mb": 978.85,
+    "working_mb": 665.28
+  },
+  {
+    "seconds": 48.48,
+    "private_mb": 976.88,
+    "working_mb": 663.81
+  },
+  {
+    "seconds": 50.49,
+    "private_mb": 977.22,
+    "working_mb": 664.46
+  },
+  {
+    "seconds": 52.5,
+    "private_mb": 960.36,
+    "working_mb": 641.53
+  },
+  {
+    "seconds": 54.51,
+    "private_mb": 907.49,
+    "working_mb": 592.1
+  },
+  {
+    "seconds": 56.53,
+    "private_mb": 907.75,
+    "working_mb": 592.27
+  },
+  {
+    "seconds": 58.55,
+    "private_mb": 887.89,
+    "working_mb": 574.91
+  },
+  {
+    "seconds": 60.57,
+    "private_mb": 460.99,
+    "working_mb": 366.57
+  },
+  {
+    "seconds": 62.59,
+    "private_mb": 409.62,
+    "working_mb": 322.9
+  },
+  {
+    "seconds": 64.61,
+    "private_mb": 167.36,
+    "working_mb": 230.81
+  },
+  {
+    "seconds": 66.63,
+    "private_mb": 130.52,
+    "working_mb": 200.4
+  }
+]

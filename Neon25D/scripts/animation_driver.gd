@@ -8,6 +8,7 @@ var clips = {}
 var lock_time = 0.0
 var priority = 0
 var dying = false
+var enabled_state=true
 
 func _init(root):
 	model = root
@@ -59,5 +60,7 @@ func trigger(clip):
 	if clip=="Death":dying=true
 
 func set_active(enabled):
+	if enabled==enabled_state:return
+	enabled_state=enabled
 	if is_instance_valid(base):base.active=enabled
 	if is_instance_valid(upper):upper.active=enabled

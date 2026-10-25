@@ -12,6 +12,14 @@ var session=preload("res://scripts/run_session.gd").new()
 var options=preload("res://scripts/player_options.gd").new()
 var upgrade_choices=[]
 var resume_probe=""
+var bullet_pool=[]
+var bullet_mesh:BoxMesh
+var bullet_materials=[]
+var enemy_grid={}
+var bullet_query=PhysicsRayQueryParameters3D.new()
+var perf_runner
+var perf_seconds=0
+var perf_output="user://perf.json"
 var animation_drivers=[]
 var storm=0
 var crystal=0
@@ -104,6 +112,8 @@ func _ready():
 	rng.randomize()
 	for arg in OS.get_cmdline_user_args():
 		if arg == "--test": test_mode = true
+		if arg.begins_with("--perf-seconds="):perf_seconds=int(arg.trim_prefix("--perf-seconds="));test_mode=true
+		if arg.begins_with("--perf-output="):perf_output=arg.trim_prefix("--perf-output=")
 		if arg.begins_with("--resume-probe="):resume_probe=arg.trim_prefix("--resume-probe=");test_mode=true
 		if arg.begins_with("--capture="): capture_path = arg.trim_prefix("--capture=")
 		if arg.begins_with("--capture-scene="):capture_scene=arg.trim_prefix("--capture-scene=")
@@ -125,7 +135,9 @@ func _ready():
 	get_tree().auto_accept_quit=false
 	Input.joy_connection_changed.connect(joy_connection)
 	show_title()
-	if resume_probe!="":call_deferred("run_resume_probe")
+	if perf_seconds>0:
+		perf_runner=preload("res://scripts/perf_bench.gd").new();perf_runner.run(self,perf_seconds,perf_output)
+	elif resume_probe!="":call_deferred("run_resume_probe")
 	elif test_mode: call_deferred("run_tests")
 	elif capture_path != "":
 		start_game()
@@ -368,7 +380,7 @@ func enter_room(index):
 		world.free()
 	animation_drivers.clear()
 	feel.reset(self)
-	enemies.clear(); bullets.clear(); loot.clear(); fx.clear(); hazards.clear()
+	enemies.clear(); bullets.clear(); bullet_pool.clear(); enemy_grid.clear(); loot.clear(); fx.clear(); hazards.clear()
 	world = Node3D.new(); add_child(world)
 	room_index = index
 	run_floor=max(run_floor,index+1)
@@ -517,8 +529,14 @@ func shoot(dir):
 	sound("shot")
 
 func spawn_bullet(pos, vel, enemy, amount=10.0, penetration=0):
-	var node = cube(world,pos,Vector3(0.12,0.12,0.3),Color("ff527f") if enemy else Color("7effdf"),true)
-	node.material_override.no_depth_test=true
+	if bullet_mesh==null:
+		bullet_mesh=BoxMesh.new();bullet_mesh.size=Vector3(.12,.12,.3)
+		for color in [Color("7effdf"),Color("ff527f")]:
+			var mat=material(color,true);mat.no_depth_test=true;bullet_materials.append(mat)
+	var node:MeshInstance3D
+	if not bullet_pool.is_empty():node=bullet_pool.pop_back();node.show()
+	else:node=MeshInstance3D.new();node.mesh=bullet_mesh;world.add_child(node)
+	node.position=pos;node.material_override=bullet_materials[int(enemy)]
 	node.rotation.y = atan2(vel.x,vel.z)
 	bullets.append({"node":node,"vel":vel,"enemy":enemy,"damage":amount,"pierce":penetration,"life":3.0,"hit":[]})
 
@@ -589,7 +607,7 @@ func update_enemies(dt):
 		feel.telegraph(self,e)
 		if e.mode=="charge":play_actor(e.mesh,"Dash")
 		e.mesh.get_meta("animation_driver").tick(velocity.length()>.1,dt,e.freeze>0)
-		if contact_active(e) and has_sight(b.position,player.position) and b.position.distance_to(player.position)<(1.3 if e.kind=="boss" else .8):hurt(20 if e.kind=="boss" else 12)
+		if contact_active(e) and b.position.distance_to(player.position)<(1.3 if e.kind=="boss" else .8) and has_sight(b.position,player.position):hurt(20 if e.kind=="boss" else 12)
 		for i in range(orbit):
 			var orbit_pos=player.position+Vector3(cos(elapsed*3+i*TAU/orbit),0,sin(elapsed*3+i*TAU/orbit))*1.8
 			if e.orbit_cd<=0 and orbit_pos.distance_to(b.position)<.8 and has_sight(player.position,b.position):
@@ -605,17 +623,39 @@ func contact_active(e):
 func boss_behavior(e, _dt):
 	return boss_director.tick(self,e)
 
+func recycle_bullet(node):
+	node.hide()
+	if bullet_pool.size()<512:bullet_pool.append(node)
+	else:node.queue_free()
+
+func rebuild_enemy_grid():
+	enemy_grid.clear()
+	for e in enemies:
+		if e.hp<=0:continue
+		var cell=Vector2i(floor(e.body.position.x/2),floor(e.body.position.z/2))
+		if not enemy_grid.has(cell):enemy_grid[cell]=[]
+		enemy_grid[cell].append(e)
+
+func nearby_targets(a,b):
+	var result=[]
+	for x in range(int(floor((min(a.x,b.x)-.85)/2)),int(floor((max(a.x,b.x)+.85)/2))+1):
+		for z in range(int(floor((min(a.z,b.z)-.85)/2)),int(floor((max(a.z,b.z)+.85)/2))+1):
+			result.append_array(enemy_grid.get(Vector2i(x,z),[]))
+	return result
+
 func update_bullets(dt):
+	rebuild_enemy_grid()
+	var player_target={"body":player}
 	for bullet in bullets.duplicate():
 		var node=bullet.node
 		var start=node.position
 		var end=start+bullet.vel*dt
-		var query=PhysicsRayQueryParameters3D.create(start,end,1)
+		var query=bullet_query;query.from=start;query.to=end;query.collision_mask=1
 		var wall=get_world_3d().direct_space_state.intersect_ray(query)
 		if not wall.is_empty():
 			end=wall.position;bullet.life=0;feel.impact(self,end,Color("ffcd81"),4)
 		node.position=end;bullet.life-=dt
-		var candidates=[{"body":player}] if bullet.enemy else enemies.duplicate()
+		var candidates=[player_target] if bullet.enemy else nearby_targets(start,end)
 		for target in candidates:
 			if target in bullet.hit:continue
 			if not bullet.enemy and target.hp<=0:continue
@@ -628,7 +668,7 @@ func update_bullets(dt):
 				bullet.pierce-=1
 				if bullet.pierce<0:bullet.life=0;break
 		if bullet.life<=0 or node.position.length()>40:
-			node.queue_free();bullets.erase(bullet)
+			recycle_bullet(node);bullets.erase(bullet)
 		if state!="play":return
 	for e in enemies.duplicate():
 		if e.hp<=0:kill_enemy(e)
@@ -820,7 +860,7 @@ func quit_safely():
 
 func _notification(what):
 	if what==NOTIFICATION_WM_CLOSE_REQUEST:quit_safely()
-	if what==NOTIFICATION_APPLICATION_FOCUS_OUT and state=="play":toggle_pause()
+	if what==NOTIFICATION_APPLICATION_FOCUS_OUT and state=="play" and perf_seconds==0:toggle_pause()
 
 func finish(won):
 	if settled:return
@@ -1091,8 +1131,10 @@ func _process(_dt):
 	resize_hud_bars()
 	options.apply_audio(self)
 	feel.update(self,_dt if state=="play" else 0.0)
-	for driver in animation_drivers:
-		if is_instance_valid(driver.model):driver.set_active(state in ["play","dead","ending","showcase"])
+	for index in range(animation_drivers.size()-1,-1,-1):
+		var driver=animation_drivers[index]
+		if not is_instance_valid(driver.model):animation_drivers.remove_at(index);continue
+		driver.set_active(state in ["play","dead","ending","showcase"])
 	if is_instance_valid(touch_root):touch_root.visible=touch_enabled and state=="play"
 	frame_count+=1
 	if capture_path!="" and frame_count==45:
@@ -1146,6 +1188,8 @@ func run_tests():
 	var ray=PhysicsRayQueryParameters3D.create(Vector3(-8,1,-2),Vector3(-2,1,-2),1)
 	assert(not get_world_3d().direct_space_state.intersect_ray(ray).is_empty(),"Cover must block bullets")
 	rooms[0].drops=[];spawn_loot(Vector3.ZERO,false,12,5);save_room_drops();assert(rooms[0].drops.size()==1)
+	var perf_ok=await preload("res://scripts/perf_checks.gd").new().run(self)
+	assert(perf_ok==true)
 	var comfort_ok=await preload("res://scripts/comfort_checks.gd").new().run(self)
 	assert(comfort_ok==true)
 	var level_ok=await preload("res://scripts/level_checks.gd").new().run(self)

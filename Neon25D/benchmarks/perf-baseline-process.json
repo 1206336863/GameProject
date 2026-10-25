@@ -1,0 +1,147 @@
+[
+  {
+    "seconds": 0.01,
+    "private_mb": 0.45,
+    "working_mb": 2.59
+  },
+  {
+    "seconds": 2.08,
+    "private_mb": 1.31,
+    "working_mb": 7.21
+  },
+  {
+    "seconds": 4.11,
+    "private_mb": 1035.45,
+    "working_mb": 717.84
+  },
+  {
+    "seconds": 6.13,
+    "private_mb": 1046.84,
+    "working_mb": 726.61
+  },
+  {
+    "seconds": 8.14,
+    "private_mb": 1046.84,
+    "working_mb": 726.67
+  },
+  {
+    "seconds": 10.15,
+    "private_mb": 1042.73,
+    "working_mb": 722.58
+  },
+  {
+    "seconds": 12.16,
+    "private_mb": 1042.73,
+    "working_mb": 722.62
+  },
+  {
+    "seconds": 14.19,
+    "private_mb": 1042.73,
+    "working_mb": 722.87
+  },
+  {
+    "seconds": 16.2,
+    "private_mb": 1046.52,
+    "working_mb": 726.35
+  },
+  {
+    "seconds": 18.21,
+    "private_mb": 1046.52,
+    "working_mb": 726.35
+  },
+  {
+    "seconds": 20.23,
+    "private_mb": 1046.52,
+    "working_mb": 726.64
+  },
+  {
+    "seconds": 22.25,
+    "private_mb": 1049.58,
+    "working_mb": 729.41
+  },
+  {
+    "seconds": 24.27,
+    "private_mb": 1049.58,
+    "working_mb": 729.61
+  },
+  {
+    "seconds": 26.28,
+    "private_mb": 1052.12,
+    "working_mb": 731.89
+  },
+  {
+    "seconds": 28.3,
+    "private_mb": 1052.12,
+    "working_mb": 732.09
+  },
+  {
+    "seconds": 30.32,
+    "private_mb": 1053.95,
+    "working_mb": 733.69
+  },
+  {
+    "seconds": 32.33,
+    "private_mb": 1058.41,
+    "working_mb": 739.05
+  },
+  {
+    "seconds": 34.35,
+    "private_mb": 1061.87,
+    "working_mb": 742.21
+  },
+  {
+    "seconds": 36.36,
+    "private_mb": 1074.34,
+    "working_mb": 756.58
+  },
+  {
+    "seconds": 38.38,
+    "private_mb": 1083.35,
+    "working_mb": 770.23
+  },
+  {
+    "seconds": 40.39,
+    "private_mb": 1083.35,
+    "working_mb": 770.24
+  },
+  {
+    "seconds": 42.4,
+    "private_mb": 1083.35,
+    "working_mb": 770.27
+  },
+  {
+    "seconds": 44.41,
+    "private_mb": 1083.35,
+    "working_mb": 770.49
+  },
+  {
+    "seconds": 46.44,
+    "private_mb": 1083.35,
+    "working_mb": 770.5
+  },
+  {
+    "seconds": 48.47,
+    "private_mb": 1044.58,
+    "working_mb": 729.43
+  },
+  {
+    "seconds": 50.5,
+    "private_mb": 1049.55,
+    "working_mb": 733.53
+  },
+  {
+    "seconds": 52.53,
+    "private_mb": 1054.29,
+    "working_mb": 739.22
+  },
+  {
+    "seconds": 54.57,
+    "private_mb": 984.17,
+    "working_mb": 651.73
+  },
+  {
+    "seconds": 56.6,
+    "private_mb": 441.51,
+    "working_mb": 382.32
+  }
+]

@@ -33,29 +33,82 @@ def label(text,pos,color,size=.25):
  if font:o.data.font=font
  o.data.materials.append(color);bpy.ops.object.convert(target='MESH');current.append(o)
 def save_asset(name):
+ if name.startswith('stall_') or any(o.type=='ARMATURE' for o in current):
+  groups={}
+  rigs=[o for o in current if o.type=='ARMATURE']
+  for o in current:
+   if o.type!='MESH':continue
+   bpy.context.view_layer.objects.active=o
+   for modifier in list(o.modifiers):
+    if modifier.type!='ARMATURE':bpy.ops.object.modifier_apply(modifier=modifier.name)
+   groups.setdefault(o.data.materials[0].name,[]).append(o)
+  joined=[]
+  for material_name,objects in groups.items():
+   bpy.ops.object.select_all(action='DESELECT')
+   for o in objects:o.select_set(True)
+   bpy.context.view_layer.objects.active=objects[0]
+   if len(objects)>1:bpy.ops.object.join()
+   o=bpy.context.object;o.name=name+'_'+material_name;joined.append(o)
+  current[:]=joined+rigs
  bpy.ops.object.select_all(action='DESELECT')
  for o in current:o.select_set(True)
  bpy.ops.export_scene.gltf(filepath=str(OUT/(name+'.glb')),export_format='GLB',use_selection=True,export_apply=True,export_animations=True,export_animation_mode='NLA_TRACKS',export_frame_range=False,export_force_sampling=True)
  models[name]=list(current);current.clear()
  for o in models[name]:o.hide_set(True)
+canvas_red=mat('Ramen canvas',(.6,.065,.055),rough=.85)
+canvas_green=mat('Tea canvas',(.035,.35,.22),rough=.85)
+cream=mat('Cream lettering',(.95,.84,.58),rough=.7)
+soup=mat('Golden broth',(.8,.3,.035),rough=.25)
 def stall(name,sign,neon):
- box('Counter',(0,0,.65),(2.5,1.25,1.3),wood);box('Countertop',(0,-.04,1.35),(2.75,1.45,.14),steel)
- for x in [-1.22,1.22]:box('Post',(x,.5,1.5),(.12,.12,3),steel)
- box('Roof',(0,.1,2.85),(2.9,1.9,.2),dark)
- for i in range(12):box('Awning stripe',(-1.32+i*.24,-.8,2.68),(.23,.15,.36),neon if i%2==0 else dark,.015)
- box('Sign backing',(0,-.98,3.12),(2.3,.13,.62),dark);label(sign,(0,-1.06,2.94),neon,.35)
+ cloth=canvas_red if name=='stall_ramen' else canvas_green if name=='stall_tea' else purple
+ # Rear-half awning keeps the counter and wares visible from the steep game camera.
+ for x in [-1.25,1.25]:box('Timber post',(x,.48,1.25),(.11,.11,2.5),wood)
+ box('Rear canopy',(0,.48,2.55),(2.85,.72,.13),cloth)
+ for i in range(7):box('Canvas stripe',(-1.2+i*.4,.48,2.63),(.17,.73,.025),cream,.005)
+ box('Marquee',(0,.35,2.92),(2.65,.13,.5),dark)
+ box('Marquee neon',(0,.27,3.19),(2.68,.04,.035),neon,.005)
+ label(sign,(0,.27,2.76),cream,.34)
  if name=='stall_arcade':
-  for x in [-.7,0,.7]:
-   box('Arcade console',(x,-.2,1.75),(.5,.45,.7),dark);box('Arcade screen',(x,-.44,1.86),(.35,.025,.32),purple,.01);sphere('Joystick',(x,-.5,1.48),.04,cyan)
- elif name=='stall_tea':
-  for i in range(5):
-   cylinder('Tea bottle',(-.8+i*.4,-.2,1.7),.1,.55,cyan if i%2 else amber);cylinder('Bottle cap',(-.8+i*.4,-.2,1.99),.105,.06,dark)
+  for x in [-.62,.62]:
+   box('Arcade cabinet',(x,-.15,.85),(.95,.9,1.7),dark)
+   box('Screen bezel',(x,-.62,1.36),(.81,.08,.65),steel)
+   box('Game screen',(x,-.67,1.38),(.68,.025,.48),cyan,.01)
+   for j in range(3):box('Pixel alien',(x-.21+j*.21,-.69,1.42),(.095,.015,.11),purple,.002)
+   box('Control deck',(x,-.66,.92),(.85,.36,.1),cloth)
+   cylinder('Joystick stick',(x-.2,-.71,1.04),.025,.16,steel);sphere('Joystick ball',(x-.2,-.71,1.13),.06,red)
+   for dx in [.1,.27]:sphere('Button',(x+dx,-.73,1),.055,amber,scale=(1,1,.35))
+   label('PLAY',(x,-.64,1.82),cream,.16)
  else:
-  for i in range(3):cylinder('Bowl',(-.65+i*.65,-.35,1.49),.18,.13,skin);sphere('Soup',(-.65+i*.65,-.35,1.56),.14,amber,scale=(1,1,.15))
- box('Kick neon',(0,-.65,.13),(2.4,.04,.055),neon,.01)
- box('Side menu',(-1.42,-.22,1.97),(.15,.72,.8),dark);label('宵夜',(-1.43,-.61,1.9),neon,.18)
- for j in range(5):box('Vent slat',(1.3,.0,.6+j*.12),(.035,.7,.035),steel,.005)
- for j in range(6):box('Roof rib',(-1.2+j*.48,.1,3.0),(.08,1.75,.08),steel,.01)
+  box('Counter',(0,-.25,.52),(2.5,1.05,1.04),wood)
+  box('Countertop',(0,-.3,1.08),(2.75,1.2,.12),steel)
+  for x in [-.75,.75]:
+   cylinder('Stool cushion',(x,-.98,.5),.22,.12,cloth)
+   box('Stool leg',(x,-.98,.25),(.12,.12,.5),wood)
+  if name=='stall_tea':
+   box('Drink display',(-.72,.0,1.48),(.8,.45,.68),canvas_green)
+   for i in range(3):
+    cylinder('Tea dispenser',(-.98+i*.27,-.05,1.65),.095,.5,amber if i%2 else skin)
+    cylinder('Dispenser lid',(-.98+i*.27,-.05,1.92),.105,.04,steel)
+   for i in range(3):
+    cylinder('Takeaway cup',(.08+i*.36,-.62,1.31),.13,.33,cream)
+    cylinder('Cup lid',(.08+i*.36,-.62,1.49),.14,.035,skin)
+    cylinder('Straw',(.08+i*.36,-.62,1.65),.018,.32,red)
+   cylinder('Large cup icon',(.83,.44,2.97),.24,.55,cream)
+   cylinder('Icon straw',(.9,.44,3.39),.025,.4,red)
+  else:
+   cylinder('Stock pot',(-.8,.03,1.37),.32,.48,steel)
+   cylinder('Pot broth',(-.8,.03,1.62),.28,.025,soup)
+   for x in [-1.16,-.44]:box('Pot handle',(x,.03,1.5),(.14,.12,.06),dark)
+   for i in range(3):
+    x=-.25+i*.48
+    cylinder('Ramen bowl',(x,-.65,1.25),.2,.18,cream)
+    cylinder('Ramen soup',(x,-.65,1.35),.17,.025,soup)
+    sphere('Egg',(x-.05,-.65,1.38),.06,skin,scale=(1,.75,.3))
+    box('Chopsticks',(x+.12,-.65,1.4),(.025,.45,.025),wood,.003)
+   label('RAMEN',(0,-.8,.63),cream,.24)
+  sphere('Vendor head',(.1,.48,1.94),.17,skin)
+  box('Vendor apron',(.1,.48,1.55),(.4,.3,.5),cloth)
+ box('Kick neon',(0,-.79,.1),(2.35,.025,.04),neon,.005)
  save_asset(name)
 stall('stall_ramen','深夜拉面',pink);stall('stall_tea','夜茶',cyan);stall('stall_arcade','電玩街',purple)
 def rig_character(name):
