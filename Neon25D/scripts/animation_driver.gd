@@ -47,7 +47,8 @@ func trigger(clip):
 	if dying:return
 	if clip=="Dash" and lock_time>0 and base.current_animation==clips.Dash:return
 	if clip=="Shoot":
-		if lock_time<=0:upper.play("Shoot",.035)
+		if lock_time<=0:
+			upper.stop();upper.play("Shoot",.035)
 		return
 	var requested = {"Hurt":1,"Dash":2,"Death":3}.get(clip,0)
 	if requested<priority and lock_time>0:return

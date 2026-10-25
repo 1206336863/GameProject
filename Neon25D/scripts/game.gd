@@ -3,6 +3,9 @@ extends Node3D
 const AnimationDriver=preload("res://scripts/animation_driver.gd")
 const MarketArt=preload("res://scripts/market_art.gd")
 const TouchPad=preload("res://scripts/touch_pad.gd")
+const CombatFeel=preload("res://scripts/combat_feel.gd")
+var feel=CombatFeel.new()
+var shake_strength=1.0
 var animation_drivers=[]
 var storm=0
 var crystal=0
@@ -117,6 +120,7 @@ func _ready():
 		start_game()
 		if capture_scene=="stats":show_statistics()
 		elif capture_scene=="rig":rig_showcase()
+		elif capture_scene=="combat":combat_showcase()
 
 func material(color: Color, emission = false):
 	var m = StandardMaterial3D.new()
@@ -335,6 +339,7 @@ func enter_room(index):
 	if is_instance_valid(world):
 		world.free()
 	animation_drivers.clear()
+	feel.reset(self)
 	enemies.clear(); bullets.clear(); loot.clear(); fx.clear(); hazards.clear()
 	world = Node3D.new(); add_child(world)
 	room_index = index
@@ -364,6 +369,7 @@ func enter_room(index):
 			cube(world,pos,Vector3(3,0.04,1.6),Color("287a55"),true)
 			hazards.append({"pos":pos,"size":Vector2(3,1.6)})
 	MarketArt.new().build(self,r)
+	feel.collect_occluders(world)
 	player = actor(Vector3(-10.5,0,0))
 	player_model = models.player.instantiate(); player.add_child(player_model);register_animation(player_model)
 	invulnerable = 1; attack_gap = 0.9
@@ -389,7 +395,7 @@ func spawn_enemy(kind, pos):
 	var size = 1.7 if kind == "boss" else 1.12 if kind == "tank" else 1.0
 	mesh.scale = Vector3.ONE*size
 	var life = 1250.0 if kind == "boss" else 110.0 if kind == "tank" else 38.0+room_index*3
-	var e = {"body":body,"mesh":mesh,"kind":kind,"hp":life,"max":life,"cd":1.0+enemies.size()*0.3,"mode":"rest" if kind == "boss" else "seek","timer":1.4,"dir":Vector3.ZERO,"move":0,"slow":0.0,"freeze":0.0,"hits":0,"orbit_cd":0.0}
+	var e = {"body":body,"mesh":mesh,"kind":kind,"hp":life,"max":life,"cd":1.0+enemies.size()*0.3,"mode":"rest" if kind == "boss" else "seek","timer":1.4,"dir":Vector3.ZERO,"move":0,"slow":0.0,"freeze":0.0,"hits":0,"orbit_cd":0.0,"stagger":0.0,"stagger_cd":0.0}
 	enemies.append(e)
 
 func _unhandled_input(event):
@@ -465,6 +471,7 @@ func _physics_process(dt):
 
 func shoot(dir):
 	play_actor(player_model,"Shoot")
+	feel.fire(self,player.position,dir,false)
 	for i in range(multi):
 		var angle = (i-(multi-1)*0.5)*0.14
 		spawn_bullet(player.position+Vector3(0,1,0),dir.rotated(Vector3.UP,angle)*22,false,damage_value,pierce)
@@ -472,6 +479,7 @@ func shoot(dir):
 
 func spawn_bullet(pos, vel, enemy, amount=10.0, penetration=0):
 	var node = cube(world,pos,Vector3(0.12,0.12,0.3),Color("ff527f") if enemy else Color("7effdf"),true)
+	node.material_override.no_depth_test=true
 	node.rotation.y = atan2(vel.x,vel.z)
 	bullets.append({"node":node,"vel":vel,"enemy":enemy,"damage":amount,"pierce":penetration,"life":3.0,"hit":[]})
 
@@ -482,7 +490,13 @@ func has_sight(a: Vector3,b: Vector3):
 func update_enemies(dt):
 	for e in enemies.duplicate():
 		if e.hp <= 0: continue
-		e.cd -= dt;e.timer -= dt;e.slow = max(0,e.slow-dt);e.freeze = max(0,e.freeze-dt);e.orbit_cd -= dt
+		e.freeze=max(0,e.freeze-dt)
+		if e.freeze>0:
+			e.mesh.get_meta("animation_driver").tick(false,dt,true)
+			continue
+		e.stagger=max(0,e.stagger-dt);e.stagger_cd=max(0,e.stagger_cd-dt)
+		if e.stagger>0:continue
+		e.cd -= dt;e.timer -= dt;e.slow = max(0,e.slow-dt);e.orbit_cd -= dt
 		var b = e.body
 		var dir = (player.position-b.position).normalized()
 		var distance = b.position.distance_to(player.position)
@@ -491,36 +505,52 @@ func update_enemies(dt):
 		elif e.kind == "boss": velocity = boss_behavior(e,dt)
 		elif e.kind == "gun":
 			velocity = dir*(-1.5 if distance<5.0 else 1.6 if distance>8 else 0.0)
-			if e.cd<=0 and attack_gap<=0 and has_sight(b.position,player.position):
-				e.mode="volley";e.timer=0.0;e.burst=3;e.cd=2.4;attack_gap=1.4
-			if e.mode=="volley" and e.timer<=0:
-				play_actor(e.mesh,"Shoot")
-				spawn_bullet(b.position+Vector3(0,1,0),dir*8,true)
-				e.burst-=1;e.timer=.18
-				if e.burst<=0:e.mode="seek"
+			if e.mode=="seek" and e.cd<=0 and attack_gap<=0 and has_sight(b.position,player.position):
+				e.mode="aim";e.timer=.65;e.dir=dir;e.burst=3;attack_gap=1.6
+			if e.mode in ["aim","volley","recover"]:velocity=Vector3.ZERO
+			if e.mode=="aim" and e.timer<=0:
+				e.mode="volley";e.timer=.12;play_actor(e.mesh,"Shoot")
+			elif e.mode=="volley" and e.timer<=0:
+				if has_sight(b.position,b.position+e.dir*.7):
+					spawn_bullet(b.position+Vector3(0,1,0),e.dir*8,true)
+					feel.fire(self,b.position,e.dir,true)
+				e.burst-=1;e.timer=.22
+				if e.burst<=0:e.mode="recover";e.timer=.55;e.cd=2.4
+				else:play_actor(e.mesh,"Shoot")
+			elif e.mode=="recover" and e.timer<=0:e.mode="seek"
 		elif e.kind in ["tank","dash"]:
 			if e.mode=="windup":
 				velocity=Vector3.ZERO
-				if e.timer<=0:e.mode="charge";e.timer=.55 if e.kind=="tank" else .3
+				if e.timer<=0:
+					e.mode="charge";e.timer=.55 if e.kind=="tank" else .45
+					play_actor(e.mesh,"Dash")
 			elif e.mode=="charge":
-				velocity=e.dir*13
-				if e.timer<=0:e.mode="recover";e.timer=.9;attack_gap=.6
+				velocity=e.dir*13 if e.kind=="tank" else (e.target-b.position)/max(e.timer+dt,.001)
+				if e.timer<=0:
+					velocity=Vector3.ZERO;e.mode="recover";e.timer=.9;attack_gap=.6
+					if e.kind=="dash":
+						feel.impact(self,b.position+Vector3.UP,Color("ffad65"),12)
+						if b.position.distance_to(player.position)<1.25 and has_sight(b.position,player.position):hurt(16)
 			elif e.mode=="recover":
 				velocity=Vector3.ZERO
 				if e.timer<=0:e.mode="seek";e.cd=1.7
 			elif e.cd<=0 and attack_gap<=0 and distance<12 and has_sight(b.position,player.position):
-				e.mode="windup";e.dir=dir;e.timer=.85 if e.kind=="tank" else .4;attack_gap=1.5
-				warning_line(b.position,dir,Color("ffad65"))
+				e.mode="windup";e.dir=dir;e.timer=.85 if e.kind=="tank" else .65;attack_gap=1.5
+				e.target=b.position+dir*min(distance,5.85)
 		if e.slow>0:velocity*=.5
 		b.velocity=velocity;b.move_and_slide()
 		if b.get_slide_collision_count()>0 and e.mode=="charge":
 			e.mode="rest" if e.kind=="boss" else "recover";e.timer=1.7 if e.kind=="boss" else .9
 		elif b.get_slide_collision_count()>0 and e.mode=="seek":
 			b.velocity=Vector3(-dir.z,0,dir.x)*2.5;b.move_and_slide()
-		if dir.length()>.1:e.mesh.rotation.y=atan2(dir.x,dir.z)
+		var facing=e.dir if e.mode in ["windup","charge","aim","volley"] else dir
+		if facing.length()>.1:e.mesh.rotation.y=atan2(facing.x,facing.z)
+		e.mesh.rotation.x=.22 if e.mode in ["windup","aim"] else 0.0
+		e.mesh.position.y=sin(clamp(1-e.timer/.45,0,1)*PI)*1.3 if e.kind=="dash" and e.mode=="charge" else 0.0
+		feel.telegraph(self,e)
 		if e.mode=="charge":play_actor(e.mesh,"Dash")
 		e.mesh.get_meta("animation_driver").tick(velocity.length()>.1,dt,e.freeze>0)
-		if distance<(1.3 if e.kind=="boss" else .8):hurt(20 if e.kind=="boss" else 12)
+		if contact_active(e) and has_sight(b.position,player.position) and b.position.distance_to(player.position)<(1.3 if e.kind=="boss" else .8):hurt(20 if e.kind=="boss" else 12)
 		for i in range(orbit):
 			var orbit_pos=player.position+Vector3(cos(elapsed*3+i*TAU/orbit),0,sin(elapsed*3+i*TAU/orbit))*1.8
 			if e.orbit_cd<=0 and orbit_pos.distance_to(b.position)<.8 and has_sight(player.position,b.position):
@@ -529,6 +559,9 @@ func update_enemies(dt):
 		if state!="play":return
 	for e in enemies.duplicate():
 		if e.hp<=0:kill_enemy(e)
+
+func contact_active(e):
+	return e.freeze<=0 and e.stagger<=0 and (e.kind=="chase" or (e.kind in ["tank","boss"] and e.mode=="charge"))
 
 func boss_behavior(e, _dt):
 	var b=e.body
@@ -540,12 +573,18 @@ func boss_behavior(e, _dt):
 		e.move=(e.move+1)%3;e.mode="windup";e.timer=1.1;e.dir=(player.position-b.position).normalized()
 		if e.move==0:
 			e.target=player.position
-			for dx in [-3,0,3]:ring_warning(Vector3(clamp(e.target.x+dx,-11,11),0.03,e.target.z),1.5,1.1,true)
-		else:warning_line(b.position,e.dir,Color("ff618e"))
+			for dx in [-3,0,3]:ring_warning(Vector3(clamp(e.target.x+dx,-11,11),0.03,e.target.z),1.5,1.1,false,e)
+		else:warning_line(b.position,e.dir,Color("ff618e"),1.1,7.8 if e.move==2 else 10.0,e)
 	elif e.mode=="windup" and e.timer<=0:
 		if e.move==2:e.mode="charge";e.timer=.65
 		else:
+			if e.move==0:
+				for dx in [-3,0,3]:
+					var impact_pos=Vector3(clamp(e.target.x+dx,-11,11),0,e.target.z)
+					feel.impact(self,impact_pos+Vector3.UP,Color("ff618e"),12)
+					if player.position.distance_to(impact_pos)<1.5:hurt(18)
 			if e.move==1:
+				play_actor(e.mesh,"Shoot")
 				var count=11 if e.has("phase2") else 7
 				for i in range(count):spawn_bullet(b.position+Vector3(0,1,0),e.dir.rotated(Vector3.UP,(i-(count-1)*.5)*.16)*8.5,true)
 			e.mode="rest";e.timer=1.5
@@ -561,7 +600,8 @@ func update_bullets(dt):
 		var end=start+bullet.vel*dt
 		var query=PhysicsRayQueryParameters3D.create(start,end,1)
 		var wall=get_world_3d().direct_space_state.intersect_ray(query)
-		if not wall.is_empty():end=wall.position;bullet.life=0
+		if not wall.is_empty():
+			end=wall.position;bullet.life=0;feel.impact(self,end,Color("ffcd81"),4)
 		node.position=end;bullet.life-=dt
 		var candidates=[{"body":player}] if bullet.enemy else enemies.duplicate()
 		for target in candidates:
@@ -611,14 +651,19 @@ func hit_enemy(e, amount, critical=false):
 	if e.hp<=0:return
 	e.hp-=amount
 	if critical:run_crits+=1
-	play_actor(e.mesh,"Hurt")
+	if e.mode=="seek" and e.kind not in ["boss","tank"] and e.stagger_cd<=0:
+		e.stagger=.09;e.stagger_cd=.4;play_actor(e.mesh,"Hurt")
+	feel.impact(self,e.body.position+Vector3.UP,Color("ffe08b") if critical else Color("9bffe5"),10 if critical else 5)
+	if critical:feel.kick(.09);sound("crit")
 	floating(e.body.position+Vector3(0,2.3,0),("暴击 " if critical else "")+str(int(ceil(amount))),Color("ffe08b") if critical else Color("b5ffe8"))
 	sound("hit")
 
 func kill_enemy(e):
 	if e not in enemies:return
 	kills+=1
+	feel.impact(self,e.body.position+Vector3.UP,Color("ffafde"),14);feel.kick(.12);sound("kill")
 	var pos=e.body.position
+	if e.has("warning") and is_instance_valid(e.warning):e.warning.queue_free()
 	enemies.erase(e);play_actor(e.mesh,"Death");e.body.collision_layer=0;e.body.collision_mask=0
 	fx.append({"node":e.body,"life":1.0,"kind":"corpse"})
 	if e.kind=="boss":
@@ -633,6 +678,7 @@ func hurt(amount):
 	run_damage+=min(hp,amount)
 	hp=max(0,hp-amount);invulnerable=.7
 	play_actor(player_model,"Hurt")
+	feel.kick(.22)
 	floating(player.position+Vector3(0,2.3,0),"−"+str(amount),Color("ff769f"));sound("hurt")
 	if hp<=0:finish(false)
 
@@ -731,8 +777,12 @@ func toggle_pause():
 	if state=="play":
 		menu("夜市暂停营业","继续你的旅途，或放弃本局重新出发。")
 		state="pause"
-		button("继续游戏",resume_game);button("重新开始",start_game);button("回到主菜单",show_title)
+		button("震动强度："+str(shake_strength)+"（点击切换）",cycle_shake);button("继续游戏",resume_game);button("重新开始",start_game);button("回到主菜单",show_title)
 	elif state=="pause":resume_game()
+
+func cycle_shake():
+	shake_strength=0.0 if shake_strength==1.0 else .35 if shake_strength==0.0 else 1.0
+	state="play";toggle_pause()
 
 func _notification(what):
 	if what==NOTIFICATION_APPLICATION_FOCUS_OUT and state=="play":toggle_pause()
@@ -786,14 +836,16 @@ func beam(a,b,color):
 	if distance>.01:node.look_at(b)
 	fx.append({"node":node,"life":.14,"kind":"beam"})
 
-func warning_line(pos,dir,color):
-	var node=cube(world,pos+dir*3+Vector3(0,.04,0),Vector3(.65,.04,6),color,true)
+func warning_line(pos,dir,color,life=.85,length=6.0,owner=null):
+	var node=cube(world,pos+dir*length*.5+Vector3(0,.04,0),Vector3(.65,.04,length),color,true)
 	node.rotation.y=atan2(dir.x,dir.z)
-	fx.append({"node":node,"life":.85,"kind":"warn"})
+	node.material_override.no_depth_test=true
+	fx.append({"node":node,"life":life,"kind":"warn","owner":owner})
 
-func ring_warning(pos,radius,life,damaging=false):
+func ring_warning(pos,radius,life,damaging=false,owner=null):
 	var node=MeshInstance3D.new();var mesh=CylinderMesh.new();mesh.top_radius=radius;mesh.bottom_radius=radius;mesh.height=.04;node.mesh=mesh;node.material_override=material(Color("ff557d"),true);world.add_child(node);node.position=pos
-	fx.append({"node":node,"life":life,"kind":"strike" if damaging else "ring","radius":radius})
+	node.material_override.no_depth_test=true
+	fx.append({"node":node,"life":life,"kind":"strike" if damaging else "ring","radius":radius,"owner":owner})
 
 func blast(pos,radius,amount,source):
 	ring_warning(pos+Vector3(0,.08,0),radius,.15)
@@ -802,7 +854,10 @@ func blast(pos,radius,amount,source):
 
 func update_fx(dt):
 	for effect in fx.duplicate():
-		effect.life-=dt
+		if effect.get("owner")!=null:
+			var owner=effect.owner
+			effect.life=owner.timer if owner.hp>0 and owner.mode=="windup" else 0.0
+		else:effect.life-=dt
 		if effect.kind=="text":effect.node.position.y+=dt*.8
 		if effect.life<=0:
 			if effect.kind=="strike" and player.position.distance_to(effect.node.position)<effect.radius: hurt(18)
@@ -817,10 +872,10 @@ func update_fx(dt):
 	for i in range(orbit):player.get_meta("orbits")[i].position=player.position+Vector3(cos(elapsed*3+i*TAU/orbit)*1.8,.85,sin(elapsed*3+i*TAU/orbit)*1.8)
 
 func prepare_audio():
-	for key in ["shot","hit","hurt","pick","level","dash"]:
+	for key in ["shot","hit","hurt","pick","level","dash","crit","kill"]:
 		var sample=AudioStreamWAV.new();sample.format=AudioStreamWAV.FORMAT_16_BITS;sample.mix_rate=22050
 		var bytes=PackedByteArray();var count=3307;bytes.resize(count*2)
-		var frequency={"shot":520,"hit":160,"hurt":80,"pick":900,"level":660,"dash":300}[key]
+		var frequency={"shot":520,"hit":160,"hurt":80,"pick":900,"level":660,"dash":300,"crit":1100,"kill":240}[key]
 		for i in range(count):
 			var value=int(sin(TAU*frequency*i/22050.0)*7000*pow(1-float(i)/count,2))
 			bytes.encode_s16(i*2,value)
@@ -970,8 +1025,23 @@ func rig_showcase():
 		var label=Label3D.new();world.add_child(label);label.position=Vector3(-4.4+i*1.8,2.8,0);label.text=clips[i];label.font_size=48;label.pixel_size=.008;label.billboard=BaseMaterial3D.BILLBOARD_ENABLED
 	state="showcase"
 
+func combat_showcase():
+	for e in enemies:e.body.free()
+	enemies.clear();player.position=Vector3(4,0,1.5)
+	player_model.rotation.y=-PI/2
+	spawn_enemy("tank",Vector3(-1,0,0));spawn_enemy("gun",Vector3(-4,0,3));spawn_enemy("dash",Vector3(7,0,-2))
+	for e in enemies:
+		e.dir=(player.position-e.body.position).normalized();e.mode="aim" if e.kind=="gun" else "windup";e.target=Vector3(6,0,1)
+		e.mesh.rotation.y=atan2(e.dir.x,e.dir.z);e.mesh.rotation.x=.22
+		feel.telegraph(self,e)
+	feel.update(self,.3);shoot(Vector3.LEFT)
+	feel.impact(self,Vector3(1,1,1.5),Color("ffe08b"),12)
+	state="showcase"
+	hint.text="战斗反馈演示 · 橙线冲锋 / 细线瞄准 / 圆环落点 · 玩家身前掩体自动淡出"
+
 func _process(_dt):
 	resize_hud_bars()
+	feel.update(self,_dt if state=="play" else 0.0)
 	for driver in animation_drivers:
 		if is_instance_valid(driver.model):driver.set_active(state in ["play","dead","ending","showcase"])
 	if is_instance_valid(touch_root):touch_root.visible=touch_enabled and state=="play"
@@ -1010,6 +1080,8 @@ func run_tests():
 	var ray=PhysicsRayQueryParameters3D.create(Vector3(-8,1,-2),Vector3(-2,1,-2),1)
 	assert(not get_world_3d().direct_space_state.intersect_ray(ray).is_empty(),"Cover must block bullets")
 	rooms[0].drops=[];spawn_loot(Vector3.ZERO,false,12,5);save_room_drops();assert(rooms[0].drops.size()==1)
+	var feel_ok=await preload("res://scripts/combat_checks.gd").new().run(self)
+	assert(feel_ok==true)
 	var deep_ok=await preload("res://scripts/native_checks.gd").new().run(self)
 	assert(deep_ok==true,"Deep native checks failed")
 	print("NEON25D_TESTS_OK: 17 Blender models, 12 rooms, loadout, dash, repeat shop, upgrades, boss rewards, restart, 3D actor/cover and bullet collision, persisted drops")
