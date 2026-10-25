@@ -3,3 +3,9 @@ Thumbs.db
 *.log
 .env
 .env.*
+
+/tools/
+Neon25D/.godot/
+Neon25D/build/
+*.blend1
+*.blend2

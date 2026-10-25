@@ -98,3 +98,7 @@ node tests/simulate.cjs
 ### 3.0 验证记录
 
 24 项自动化回归测试通过；三组确定性自动控制器使用正常伤害、移动、拾取、升级与购物完成十二关，均抵达胜利结算。这是流程回归验证，不能用于推断真人胜率或难度已经平衡。测试控制器和种子在 `tests/simulate.cjs`，测试 DOM / Canvas 适配在 `tests/harness.cjs`。
+
+## 原生 2.5D 首版（Blender + Godot）
+
+新工程位于 [Neon25D](Neon25D/README.md)。双击 Neon25D/Start-Game.bat 运行，Open-Editor.bat 编辑。含 11 个原创 Blender 模型和可编辑 .blend；独立 Windows 包另行提供。原网页版 3.0 保持可用。

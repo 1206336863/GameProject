@@ -1,0 +1,18 @@
+{
+  "generator": "Blender 4.5.2 LTS",
+  "units": "meters",
+  "models": [
+    "stall_ramen",
+    "stall_tea",
+    "stall_arcade",
+    "player",
+    "enemy_chase",
+    "enemy_gun",
+    "enemy_dash",
+    "enemy_tank",
+    "boss",
+    "crate",
+    "lantern"
+  ],
+  "colliders": "Created in Godot from the same placement dimensions"
+}
