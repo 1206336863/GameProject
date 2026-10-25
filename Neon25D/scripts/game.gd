@@ -6,6 +6,8 @@ const TouchPad=preload("res://scripts/touch_pad.gd")
 const CombatFeel=preload("res://scripts/combat_feel.gd")
 var feel=CombatFeel.new()
 var shake_strength=1.0
+var levels=preload("res://scripts/level_director.gd").new()
+var boss_director=preload("res://scripts/boss_director.gd").new()
 var animation_drivers=[]
 var storm=0
 var crystal=0
@@ -121,6 +123,8 @@ func _ready():
 		if capture_scene=="stats":show_statistics()
 		elif capture_scene=="rig":rig_showcase()
 		elif capture_scene=="combat":combat_showcase()
+		elif capture_scene=="level":level_showcase()
+		elif capture_scene=="boss":boss_showcase()
 
 func material(color: Color, emission = false):
 	var m = StandardMaterial3D.new()
@@ -250,7 +254,8 @@ func create_ui():
 	build_label=Label.new();ui.add_child(build_label);build_label.position=Vector2(24,92);build_label.size=Vector2(300,180);build_label.autowrap_mode=TextServer.AUTOWRAP_WORD_SMART;build_label.add_theme_font_size_override("font_size",14);build_label.modulate=Color("a0cfc5")
 	hint = Label.new()
 	ui.add_child(hint)
-	hint.position = Vector2(24,855)
+	hint.position = Vector2(24,825)
+	hint.size=Vector2(1380,65);hint.autowrap_mode=TextServer.AUTOWRAP_WORD_SMART
 	hint.add_theme_font_size_override("font_size",17)
 	overlay = Control.new()
 	ui.add_child(overlay)
@@ -332,7 +337,7 @@ func start_game():
 	rooms = []
 	for type in ["fight","fight","shop"]+pool+["boss"]:
 		rooms.append({"type":type,"clear":false,"used":false,"barrel":true,"visited":false,"rewarded":false,"drops":[],"layout":rng.randi_range(0,2)})
-	rooms[0].layout = 0; rooms[1].layout = 0; rooms[2].layout = 0
+	levels.configure(self)
 	enter_room(0)
 
 func enter_room(index):
@@ -359,15 +364,7 @@ func enter_room(index):
 			light.light_energy = 2.0; light.omni_range = 4.0
 	for x in [-13.5,13.5]: solid(Vector3(x,1,0),Vector3(0.5,2,14))
 	for z in [-5.8,5.8]: solid(Vector3(0,0.6,z),Vector3(27,1.2,0.25))
-	var positions = [Vector3(-5,0,-2),Vector3(4,0,2.4)]
-	if r.layout == 1: positions = [Vector3(-4,0,-1.5),Vector3(-4,0,-3),Vector3(4,0,1.5),Vector3(4,0,3)]
-	if r.type == "boss": positions = [Vector3(-5,0,-3),Vector3(5,0,3)]
-	for pos in positions:
-		instantiate_model("grill_cart" if r.layout==1 else "crate",pos,1.0 if r.layout==1 else 1.5);solid(pos+Vector3(0,0.75,0),Vector3(1.5,1.5,1.5))
-	if r.layout == 2 and index > 2 and r.type != "boss":
-		for pos in [Vector3(-1,0.02,-3),Vector3(2,0.02,3)]:
-			cube(world,pos,Vector3(3,0.04,1.6),Color("287a55"),true)
-			hazards.append({"pos":pos,"size":Vector2(3,1.6)})
+	levels.build(self,r)
 	MarketArt.new().build(self,r)
 	feel.collect_occluders(world)
 	player = actor(Vector3(-10.5,0,0))
@@ -378,7 +375,7 @@ func enter_room(index):
 		else:
 			var plan = ["chase","chase","chase"] if index == 0 else ["chase","gun","chase","chase"]
 			if index > 2: plan = ["tank","chase","chase","gun","dash"] if index%2 else ["gun","chase","gun","chase","dash"]
-			for i in range(plan.size()): spawn_enemy(plan[i],Vector3(6+i%3*2,0,-3+i%4*2))
+			for i in range(plan.size()): spawn_enemy(plan[i],Vector3(8+i%2*2,0,-3+i%4*2))
 	else: r.clear = true
 	if r.type in ["shop","treasure","event"]: instantiate_model("crate",Vector3(0,0,0),1.2)
 	exit_marker = cube(world,Vector3(12.75,.08,0),Vector3(.16,.1,3),Color("ff548c"),true)
@@ -396,6 +393,7 @@ func spawn_enemy(kind, pos):
 	mesh.scale = Vector3.ONE*size
 	var life = 1250.0 if kind == "boss" else 110.0 if kind == "tank" else 38.0+room_index*3
 	var e = {"body":body,"mesh":mesh,"kind":kind,"hp":life,"max":life,"cd":1.0+enemies.size()*0.3,"mode":"rest" if kind == "boss" else "seek","timer":1.4,"dir":Vector3.ZERO,"move":0,"slow":0.0,"freeze":0.0,"hits":0,"orbit_cd":0.0,"stagger":0.0,"stagger_cd":0.0}
+	if kind=="boss":e.phase=1;e.mode="intro";e.timer=1.8
 	enemies.append(e)
 
 func _unhandled_input(event):
@@ -455,7 +453,8 @@ func _physics_process(dt):
 	update_loot(dt)
 	update_fx(dt)
 	var r = rooms[room_index]
-	if enemies.is_empty() and not r.clear:
+	levels.tick(self,dt)
+	if enemies.is_empty() and not r.clear and levels.complete(r):
 		r.clear = true; coins += 10
 		if room_index < 2 and not r.rewarded:
 			r.rewarded = true
@@ -564,34 +563,7 @@ func contact_active(e):
 	return e.freeze<=0 and e.stagger<=0 and (e.kind=="chase" or (e.kind in ["tank","boss"] and e.mode=="charge"))
 
 func boss_behavior(e, _dt):
-	var b=e.body
-	if e.hp<e.max/2 and not e.has("phase2"):
-		e.phase2=true;e.mode="rest";e.timer=1.5
-		for bullet in bullets.duplicate():
-			if bullet.enemy:bullet.node.queue_free();bullets.erase(bullet)
-	if e.mode=="rest" and e.timer<=0:
-		e.move=(e.move+1)%3;e.mode="windup";e.timer=1.1;e.dir=(player.position-b.position).normalized()
-		if e.move==0:
-			e.target=player.position
-			for dx in [-3,0,3]:ring_warning(Vector3(clamp(e.target.x+dx,-11,11),0.03,e.target.z),1.5,1.1,false,e)
-		else:warning_line(b.position,e.dir,Color("ff618e"),1.1,7.8 if e.move==2 else 10.0,e)
-	elif e.mode=="windup" and e.timer<=0:
-		if e.move==2:e.mode="charge";e.timer=.65
-		else:
-			if e.move==0:
-				for dx in [-3,0,3]:
-					var impact_pos=Vector3(clamp(e.target.x+dx,-11,11),0,e.target.z)
-					feel.impact(self,impact_pos+Vector3.UP,Color("ff618e"),12)
-					if player.position.distance_to(impact_pos)<1.5:hurt(18)
-			if e.move==1:
-				play_actor(e.mesh,"Shoot")
-				var count=11 if e.has("phase2") else 7
-				for i in range(count):spawn_bullet(b.position+Vector3(0,1,0),e.dir.rotated(Vector3.UP,(i-(count-1)*.5)*.16)*8.5,true)
-			e.mode="rest";e.timer=1.5
-	elif e.mode=="charge":
-		if e.timer<=0:e.mode="rest";e.timer=1.7
-		else:return e.dir*12
-	return Vector3.ZERO
+	return boss_director.tick(self,e)
 
 func update_bullets(dt):
 	for bullet in bullets.duplicate():
@@ -622,10 +594,12 @@ func update_bullets(dt):
 		if e.hp<=0:kill_enemy(e)
 
 func projectile_hit(e, amount):
+	if e.kind=="boss" and e.mode in ["intro","transition"]:return
 	var critical=rng.randf()<crit_chance
-	var actual=min(e.hp,amount*(2 if critical else 1))
+	var hp_before=e.hp
 	var frozen=e.freeze>0
 	hit_enemy(e,amount*(2 if critical else 1),critical)
+	var actual=hp_before-e.hp
 	if leech>0:hp=min(max_hp,hp+actual*.04*leech)
 	if ice>0:
 		e.slow=2;e.hits+=1
@@ -649,7 +623,12 @@ func projectile_hit(e, amount):
 
 func hit_enemy(e, amount, critical=false):
 	if e.hp<=0:return
-	e.hp-=amount
+	if e.kind=="boss" and e.mode in ["intro","transition"]:return
+	var floor_hp=0.0
+	if e.kind=="boss":floor_hp=e.max*.65 if e.get("phase",1)==1 else e.max*.3 if e.phase==2 else 0.0
+	var hp_before=e.hp
+	e.hp=max(floor_hp,e.hp-amount)
+	amount=hp_before-e.hp
 	if critical:run_crits+=1
 	if e.mode=="seek" and e.kind not in ["boss","tank"] and e.stagger_cd<=0:
 		e.stagger=.09;e.stagger_cd=.4;play_actor(e.mesh,"Hurt")
@@ -814,13 +793,13 @@ func update_hud():
 	hp_bar.value=hp/max_hp*100
 	var r=rooms[room_index]
 	build_label.text=build_summary()
-	hint.text="WASD/方向键 移动 · 鼠标左键 射击 · 空格 冲刺 · E 交互 · F11 全屏  |  "+("街区安全，沿右侧霓虹出口前进 →" if r.clear else "清除所有敌人，利用摊车与货箱阻挡弹幕")
+	hint.text="WASD/方向键 移动 · 鼠标左键 射击 · 空格 冲刺 · E 交互 · F11 全屏  |  "+("街区安全，沿右侧霓虹出口前进 →" if r.clear else levels.description(r))
 	if r.type in ["shop","event","treasure"] and not r.used:hint.text+="  |  中央货箱：E"
 	boss_hud.text=""
 	boss_bar.hide()
 	for e in enemies:
 		if e.kind=="boss":
-			boss_hud.text="夜市之王 %d / %d  %s" % [max(0,e.hp),e.max,"反击窗口" if e.mode=="rest" else "危险预警" if e.mode=="windup" else "冲锋"]
+			boss_hud.text="夜市之王 %d / %d  %s" % [max(0,e.hp),e.max,boss_director.label(e)]
 			boss_bar.show();boss_bar.value=max(0,e.hp/e.max*100)
 	if is_instance_valid(exit_marker):
 		exit_marker.material_override.albedo_color=Color("67f6d5") if r.clear else Color("ff548c")
@@ -840,10 +819,11 @@ func warning_line(pos,dir,color,life=.85,length=6.0,owner=null):
 	var node=cube(world,pos+dir*length*.5+Vector3(0,.04,0),Vector3(.65,.04,length),color,true)
 	node.rotation.y=atan2(dir.x,dir.z)
 	node.material_override.no_depth_test=true
+	node.material_override.transparency=BaseMaterial3D.TRANSPARENCY_ALPHA;node.material_override.albedo_color.a=.28
 	fx.append({"node":node,"life":life,"kind":"warn","owner":owner})
 
 func ring_warning(pos,radius,life,damaging=false,owner=null):
-	var node=MeshInstance3D.new();var mesh=CylinderMesh.new();mesh.top_radius=radius;mesh.bottom_radius=radius;mesh.height=.04;node.mesh=mesh;node.material_override=material(Color("ff557d"),true);world.add_child(node);node.position=pos
+	var node=MeshInstance3D.new();var mesh=TorusMesh.new();mesh.inner_radius=max(.05,radius-.10);mesh.outer_radius=radius;node.mesh=mesh;node.material_override=material(Color("ff557d"),true);world.add_child(node);node.position=pos
 	node.material_override.no_depth_test=true
 	fx.append({"node":node,"life":life,"kind":"strike" if damaging else "ring","radius":radius,"owner":owner})
 
@@ -1025,6 +1005,16 @@ func rig_showcase():
 		var label=Label3D.new();world.add_child(label);label.position=Vector3(-4.4+i*1.8,2.8,0);label.text=clips[i];label.font_size=48;label.pixel_size=.008;label.billboard=BaseMaterial3D.BILLBOARD_ENABLED
 	state="showcase"
 
+func level_showcase():
+	rooms[4].type="fight";rooms[4].layout=3;rooms[4].goal=3
+	enter_room(4);player.position=Vector3(-7,0,0);update_hud();state="showcase"
+
+func boss_showcase():
+	enter_room(11);var e=enemies[0];e.body.position=Vector3(3,0,0)
+	boss_director.transition(self,e,3);e.hp=e.max*.3;e.mode="rest";e.timer=0;e.move=2
+	player.position=Vector3(-5,0,0);boss_behavior(e,.01);e.timer=0;boss_behavior(e,.01)
+	update_bullets(.38);update_fx(.01);update_hud();state="showcase"
+
 func combat_showcase():
 	for e in enemies:e.body.free()
 	enemies.clear();player.position=Vector3(4,0,1.5)
@@ -1065,6 +1055,7 @@ func run_tests():
 	pending=1;apply_upgrade(8);assert(chain==1);pending=1;apply_upgrade(9);assert(ice==1);pending=1;apply_upgrade(10);assert(explosive==1)
 	enter_room(11);assert(enemies.size()==1 and enemies[0].kind=="boss")
 	var boss=enemies[0]
+	boss.mode="rest"
 	boss.timer=0;boss_behavior(boss,.016);assert(boss.mode=="windup")
 	boss.timer=0;boss_behavior(boss,.016);assert(boss.mode=="rest")
 	boss.timer=0;boss_behavior(boss,.016);assert(boss.mode=="windup")
@@ -1080,6 +1071,8 @@ func run_tests():
 	var ray=PhysicsRayQueryParameters3D.create(Vector3(-8,1,-2),Vector3(-2,1,-2),1)
 	assert(not get_world_3d().direct_space_state.intersect_ray(ray).is_empty(),"Cover must block bullets")
 	rooms[0].drops=[];spawn_loot(Vector3.ZERO,false,12,5);save_room_drops();assert(rooms[0].drops.size()==1)
+	var level_ok=await preload("res://scripts/level_checks.gd").new().run(self)
+	assert(level_ok==true)
 	var feel_ok=await preload("res://scripts/combat_checks.gd").new().run(self)
 	assert(feel_ok==true)
 	var deep_ok=await preload("res://scripts/native_checks.gd").new().run(self)
