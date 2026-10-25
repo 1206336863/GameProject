@@ -102,3 +102,7 @@ node tests/simulate.cjs
 ## 原生 2.5D 首版（Blender + Godot）
 
 新工程位于 [Neon25D](Neon25D/README.md)。双击 Neon25D/Start-Game.bat 运行，Open-Editor.bat 编辑。含 11 个原创 Blender 模型和可编辑 .blend；独立 Windows 包另行提供。原网页版 3.0 保持可用。
+
+### 2.5D 骨骼动画与进阶版
+
+原生工程现已接入六套 16 骨骼蒙皮与 36 段动作、上半身分层射击、16 项强化、完整履历评级和原生触控逻辑。场景增加湿润沥青、细雨与热气、售货机和街边道具、差异化摊位。默认 Forward+，低负载使用 Neon25D/Start-Compatible.bat。详见 [原生工程说明](Neon25D/README.md)。

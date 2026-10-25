@@ -12,7 +12,22 @@
     "enemy_tank",
     "boss",
     "crate",
-    "lantern"
+    "lantern",
+    "plant",
+    "vending",
+    "grill_cart",
+    "bench",
+    "trash_bin",
+    "market_gate"
   ],
+  "animation_clips": [
+    "Idle",
+    "Walk",
+    "Shoot",
+    "Dash",
+    "Hurt",
+    "Death"
+  ],
+  "rigged_characters": 6,
   "colliders": "Created in Godot from the same placement dimensions"
 }
